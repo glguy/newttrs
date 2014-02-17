@@ -8,25 +8,15 @@ import Data.Monoid
 import Statistics.Distribution (complCumulative, cumulative)
 import Statistics.Distribution.Normal (normalDistr)
 
+import NewTTRS.Outcome
+
 data Law = Law { lawRaw :: !(UArray Int Double)
                , lawMean, lawStddev :: !Double }
-
-data Outcome = Outcome { _outcomeWins, _outcomeLosses :: !Int }
-  deriving (Eq, Show)
-
-makeLenses ''Outcome
-
-instance Monoid Outcome where
-  mappend (Outcome w1 l1) (Outcome w2 l2) = Outcome (w1+w2) (l1+l2)
-  mempty = Outcome 0 0
 
 data LawUpdate = LawUpdate
   { playerLaw , opponentLaw :: Law
   , updateOutcome :: Outcome
   }
-
-flipOutcome :: Outcome -> Outcome
-flipOutcome (Outcome a b) = Outcome b a
 
 -- | Law assigned to unrated players
 defaultLaw :: Law
@@ -35,6 +25,10 @@ defaultLaw = normalLaw 1800 450
 -- | The list of discrete scores characterized by a law
 omega :: [Int]
 omega = [0,10..3600]
+
+-- | The parameter used to characterize upset probability.
+alpha :: Double
+alpha = 0.0148540595817432
 
 -- | Generate a normalized law from a list of probabilities
 -- which correspond to the elements of 'omega'.
@@ -46,7 +40,6 @@ lawFromList xs = Law (listArray (0,360) normalized) mean (sqrt variance)
   variance = sum [ fromIntegral (p * p) * x | (p,x) <- zip omega normalized ]
            - mean * mean
 
-
 -- | Find the probability that the score is in the range of
 -- [i-5,i+5] given a law.
 lawAt :: Law -> Int -> Double
@@ -56,11 +49,15 @@ lawAt law i = lawRaw law ! (i `div` 10)
 -- | Probability of an upset given the difference in two ratings.
 upsetProbability :: Int -> Double
 upsetProbability d = recip (1 + exp (alpha * fromIntegral d))
-  where
-  alpha = 0.0148540595817432
 
-lawUpdate :: LawUpdate -> Law
-lawUpdate LawUpdate{playerLaw = lp, opponentLaw = lq, updateOutcome = outcome}
+-- | Perform a bayesian inference given a player's law, the opponent's law
+-- and the outcome of the matches between the two.
+lawUpdate ::
+  Law {- ^ Player's law to be updated -} ->
+  Law {- ^ Opponent's law -} ->
+  Outcome {- ^ Player's outcome against opponent -} ->
+  Law
+lawUpdate lp lq outcome
     = lawFromList
       [ sum [ upsetProbability (q - p) ^ w
             * upsetProbability (p - q) ^ l
@@ -73,8 +70,13 @@ lawUpdate LawUpdate{playerLaw = lp, opponentLaw = lq, updateOutcome = outcome}
   w = view outcomeWins outcome
   l = view outcomeLosses outcome
 
-lawUnupdate :: LawUpdate -> Law
-lawUnupdate LawUpdate{playerLaw = lp, opponentLaw = lq, updateOutcome = outcome}
+-- | Perform the inverse computation of 'lawUpdate'
+lawUnupdate ::
+  Law {- ^ Player's law to be updated -} ->
+  Law {- ^ Opponent's law -} ->
+  Outcome {- ^ Player's outcome against opponent -} ->
+  Law
+lawUnupdate lp lq outcome
     = lawFromList
       [ lawAt lp p
       / sum [ upsetProbability (q - p) ^ w
@@ -87,7 +89,7 @@ lawUnupdate LawUpdate{playerLaw = lp, opponentLaw = lq, updateOutcome = outcome}
   w = view outcomeWins outcome
   l = view outcomeLosses outcome
 
--- | Chance that law lp will defeat law lq
+-- | Chance that a player with the first law will defeat a player with the second law
 chanceToWin :: Law -> Law -> Double
 chanceToWin lp lq =
   sum [ upsetProbability (q - p)
@@ -104,13 +106,21 @@ normalLaw ::
    Law
 normalLaw mean stddev = lawFromList $ mkNormal 0 3600 mean stddev
 
-mkNormal :: Int -> Int -> Double -> Double -> [Double]
+-- | Generate a discrete approximation of a normal distribution.
+mkNormal ::
+  Int    {- ^ lower bound -} ->
+  Int    {- ^ upper bound -} ->
+  Double {- ^ mean -} ->
+  Double {- ^ standard deviation -} ->
+  [Double]
 mkNormal lo hi mean stddev =
-  c (lo + 5) : [ c (p+5) - c (p-5) | p <- [lo+10, lo+20 .. hi - 10]]
- ++ [ complCumulative distr (fromIntegral hi - 5) ]
+    [ c (lo + 5)  ]
+ ++ [ c (p+10) - c p | p <- [lo+5, lo+15 .. hi - 15]]
+ ++ [ c' (hi - 5) ]
   where
   distr = normalDistr mean stddev
-  c     = cumulative distr . fromIntegral
+  c     = cumulative      distr . fromIntegral
+  c'    = complCumulative distr . fromIntegral
 
 -- | Degrade a law given a certain number of days. When days is
 -- less than 1, no degrading is done.
@@ -124,14 +134,13 @@ timeEffect days law
              ++ [ sum [lawAt law x * timeAt y | x <- omega, y <- [3600-x,3610-x..3600]] ]
   where
   timeArray :: UArray Int Double
-  timeArray = listArray (-360,360) $ mkNormal (-3600) 3600 0 (sqrt (70*70 * fromIntegral days / 365))
+  timeArray = listArray (-360,360) $ mkNormal (-3600) 3600 0 (70 * sqrt (fromIntegral days / 365))
   timeAt y = timeArray ! (y `div` 10)
 
+-- | Compute a metric of the law used to order players
 lawScore :: Law -> Double
 lawScore law = lawMean law - 2 * lawStddev law
 
-lawIsRated :: Law -> Bool
-lawIsRated l = lawStddev l < 500
-
+-- | Return the raw law discrete approximations
 lawElems :: Law -> [Double]
 lawElems = elems . lawRaw

@@ -11,6 +11,7 @@ import qualified Data.Map as Map
 
 import NewTTRS.Law
 import NewTTRS.Match
+import NewTTRS.Outcome
 
 data PlayerSummary name = PlayerSummary
   { _summaryInitialLaw, _summaryFinalLaw :: Law
@@ -33,7 +34,7 @@ makeLenses ''MatchSummary
 matchOutcomes :: Ord name => [Match name] -> Map name (Map name Outcome)
 matchOutcomes = foldl' addMatch Map.empty
   where
-  look w l = at w . defaultEmpty . at l . non mempty
+  look w l = at w . non' _Empty . at l . non' _Empty
 
   addMatch outcomes match = updateWinner match . updateLoser match $ outcomes
   updateWinner match = look (view matchWinner match) (view matchLoser  match) . outcomeWins   +~ 1
@@ -71,22 +72,8 @@ updatePlayer nearlyAdjustedLaws laws playerName opponents
     where
     opponentNearlyAdjustedLaw = fromMaybe (error "missing nearly adjusted law")
                               $ Map.lookup opponentName nearlyAdjustedLaws
-    opponentAdjustedLaw = lawUnupdate LawUpdate
-          { playerLaw   = opponentNearlyAdjustedLaw
-          , opponentLaw = initial
-          , updateOutcome = flipOutcome outcome
-          }
-    finalLaw = lawUpdate LawUpdate
-          { playerLaw   = accLaw
-          , opponentLaw = opponentAdjustedLaw
-          , updateOutcome = outcome
-          }
-
--- | Estimate the effect that a single pairing had on the player.
-computePointChange ::
-  LawUpdate ->
-  Double {- ^ change in points -}
-computePointChange u = lawMean (lawUpdate u) - lawMean (playerLaw u)
+    opponentAdjustedLaw = lawUnupdate opponentNearlyAdjustedLaw initial (flipOutcome outcome)
+    finalLaw = lawUpdate accLaw opponentAdjustedLaw outcome
 
 degradeLaw ::
   Day {- ^ Today -} ->
@@ -108,14 +95,7 @@ firstPass :: Ord name => Map name Law -> name -> Map name Outcome -> Law
 firstPass initialLaws name = ifoldl aux (getLaw name initialLaws)
   where
   aux otherPlayer accLaw outcome =
-    lawUpdate LawUpdate
-      { playerLaw   = accLaw
-      , opponentLaw = getLaw otherPlayer initialLaws
-      , updateOutcome = outcome
-      }
-
-defaultEmpty :: Iso' (Maybe (Map k v)) (Map k v)
-defaultEmpty = anon Map.empty Map.null
+    lawUpdate accLaw (getLaw otherPlayer initialLaws) outcome
 
 getLaw :: Ord name => name -> Map name Law -> Law
 getLaw n m = fromMaybe defaultLaw $ Map.lookup n m
