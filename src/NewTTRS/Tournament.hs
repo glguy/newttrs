@@ -34,6 +34,7 @@ makeLenses ''MatchSummary
 matchOutcomes :: Ord name => [Match name] -> Map name (Map name Outcome)
 matchOutcomes = foldl' addMatch Map.empty
   where
+  look :: (Functor f, Ord name) => name -> name -> LensLike' f (Map name (Map name Outcome)) Outcome
   look w l = at w . non' _Empty . at l . non' _Empty
 
   addMatch outcomes match = updateWinner match . updateLoser match $ outcomes
