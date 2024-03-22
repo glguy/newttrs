@@ -1,3 +1,4 @@
+cabal-version:       3.0
 name:                newttrs
 version:             0.1.0.2
 synopsis:            Implementation of the New Table Tennis Rating System
@@ -7,14 +8,13 @@ description:         The New Table Tennis Rating System is based on Baysian
                      and published by David J. Marcus which is avaiable
                      at http://www.ratingscentral.com/Doc/NewTTRS.pdf
 homepage:            http://github.com/glguy
-license:             BSD3
+license:             ISC
 license-file:        LICENSE
 author:              Eric Mertens
 maintainer:          emertens@gmail.com
 copyright:           2013 Eric Mertens
 category:            Math
 build-type:          Simple
-cabal-version:       >=1.8
 
 source-repository head
   type: git
@@ -22,11 +22,12 @@ source-repository head
 
 library
   exposed-modules:     NewTTRS.Law, NewTTRS.Match, NewTTRS.Outcome, NewTTRS.Tournament
-  build-depends:       base       >= 4.6  && < 4.9,
-                       lens       >= 4.3  && < 5,
-                       array      >= 0.5  && < 0.6,
-                       statistics >= 0.13 && < 0.14,
-                       time       >= 1.4  && < 1.6,
-                       containers >= 0.5  && < 0.6
+  build-depends:
+    array       ^>= 0.5.6,
+    base        ^>= 4.19.1,
+    containers  ^>= 0.6.8,
+    lens        ^>= 5.2.3,
+    statistics  ^>= 0.16.2,
+    time        ^>= 1.12.2,
   hs-source-dirs:      src
   ghc-options:         -O2
